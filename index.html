@@ -134,6 +134,51 @@ var SERVERS = [
 “Exness-Trial”, “XMGlobal-Demo”, “Tickmill-Demo”
 ];
 
+/* === LOCAL STORAGE === */
+function saveLogin(srv, lid, pw, accType) {
+try {
+localStorage.setItem(“nfx_server”, srv);
+localStorage.setItem(“nfx_login”, lid);
+localStorage.setItem(“nfx_pw”, btoa(pw));
+localStorage.setItem(“nfx_acctype”, accType);
+localStorage.setItem(“nfx_saved”, “1”);
+} catch(e) {}
+}
+function loadLogin() {
+try {
+if (localStorage.getItem(“nfx_saved”) !== “1”) return null;
+return {
+srv: localStorage.getItem(“nfx_server”) || “”,
+lid: localStorage.getItem(“nfx_login”) || “”,
+pw: atob(localStorage.getItem(“nfx_pw”) || “”),
+accType: localStorage.getItem(“nfx_acctype”) || “live”
+};
+} catch(e) { return null; }
+}
+function clearLogin() {
+try {
+[“nfx_server”,“nfx_login”,“nfx_pw”,“nfx_acctype”,“nfx_saved”].forEach(function(k) { localStorage.removeItem(k); });
+} catch(e) {}
+}
+function saveSettings(mc, lot, mo, spd) {
+try {
+localStorage.setItem(“nfx_conf”, mc);
+localStorage.setItem(“nfx_lot”, lot);
+localStorage.setItem(“nfx_maxopen”, mo);
+localStorage.setItem(“nfx_speed”, spd);
+} catch(e) {}
+}
+function loadSettings() {
+try {
+return {
+mc: parseFloat(localStorage.getItem(“nfx_conf”)) || 0.65,
+lot: parseFloat(localStorage.getItem(“nfx_lot”)) || 0.10,
+mo: parseInt(localStorage.getItem(“nfx_maxopen”)) || 5,
+spd: parseInt(localStorage.getItem(“nfx_speed”)) || 500
+};
+} catch(e) { return { mc: 0.65, lot: 0.10, mo: 5, spd: 500 }; }
+}
+
 /* === SMALL COMPONENTS === */
 function Tag(props) {
 return e(“span”, {
@@ -239,14 +284,17 @@ e(“span”, { style: { fontSize: 9, color: “#3e4a5c” } }, “\uD83E\uDDE0 
 
 /* === MAIN APP === */
 function App() {
+var saved = loadLogin();
+var savedCfg = loadSettings();
 var _scr = us(“login”), scr = _scr[0], setScr = _scr[1];
 var _step = us(0), step = _step[0], setStep = _step[1];
-var _srv = us(””), srv = _srv[0], setSrv = _srv[1];
+var _srv = us(saved ? saved.srv : “”), srv = _srv[0], setSrv = _srv[1];
 var _ss = us(””), sSearch = _ss[0], setSSearch = _ss[1];
 var _show = us(false), showSrv = _show[0], setShowSrv = _show[1];
-var _lid = us(””), lid = _lid[0], setLid = _lid[1];
-var _pw = us(””), pw = _pw[0], setPw = _pw[1];
-var _at = us(“live”), accType = _at[0], setAccType = _at[1];
+var _lid = us(saved ? saved.lid : “”), lid = _lid[0], setLid = _lid[1];
+var _pw = us(saved ? saved.pw : “”), pw = _pw[0], setPw = _pw[1];
+var _at = us(saved ? saved.accType : “live”), accType = _at[0], setAccType = _at[1];
+var _rem = us(!!saved), remember = _rem[0], setRemember = _rem[1];
 var _ai = us(null), accInfo = _ai[0], setAccInfo = _ai[1];
 var _cl = us([]), connLog = _cl[0], setConnLog = _cl[1];
 
@@ -259,10 +307,10 @@ var _eq = us(10000), equity = _eq[0], setEquity = _eq[1];
 var _stats = us({ w: 0, l: 0, pips: 0, str: 0, best: 0, pft: 0 }), stats = _stats[0], setStats = _stats[1];
 var _on = us(false), isOn = _on[0], setOn = _on[1];
 var _tab = us(“market”), tab = _tab[0], setTab = _tab[1];
-var _mc = us(0.65), minConf = _mc[0], setMinConf = _mc[1];
-var _lot = us(0.10), lotSize = _lot[0], setLotSize = _lot[1];
-var _mo = us(5), maxOpen = _mo[0], setMaxOpen = _mo[1];
-var _spd = us(500), speed = _spd[0], setSpeed = _spd[1];
+var _mc = us(savedCfg.mc), minConf = _mc[0], setMinConf = _mc[1];
+var _lot = us(savedCfg.lot), lotSize = _lot[0], setLotSize = _lot[1];
+var _mo = us(savedCfg.mo), maxOpen = _mo[0], setMaxOpen = _mo[1];
+var _spd = us(savedCfg.spd), speed = _spd[0], setSpeed = _spd[1];
 var _lg = us([]), logs = _lg[0], setLogs = _lg[1];
 var intervalRef = ur(null);
 var tickRef = ur(0);
@@ -272,6 +320,11 @@ setLogs(function(prev) {
 return [{ time: new Date(), msg: msg, type: type || “info” }].concat(prev).slice(0, 100);
 });
 }, []);
+
+// Auto-save settings when changed
+ue(function() {
+saveSettings(minConf, lotSize, maxOpen, speed);
+}, [minConf, lotSize, maxOpen, speed]);
 
 // Init engines
 ue(function() {
@@ -288,6 +341,7 @@ setPrices(init);
 // Connect
 var doConnect = function() {
 if (!srv || !lid || !pw) return;
+if (remember) { saveLogin(srv, lid, pw, accType); } else { clearLogin(); }
 setStep(1);
 setConnLog([]);
 var msgs = [“Connecting to “ + srv + “…”, “TLS 1.3 encrypted”, “Auth #” + lid + “…”, “Verified \u2713”, “Syncing…”, “\u2713 Connected”];
@@ -402,6 +456,14 @@ e(“div”, { style: { fontSize: 10, color: “#4a5568”, letterSpacing: “2p
 ),
 // Form
 step === 0 ? e(“div”, null,
+// Saved login banner
+saved ? e(“div”, { style: { marginBottom: 14, padding: 10, borderRadius: 8, background: “#00ff8808”, border: “1px solid #00ff8825”, display: “flex”, alignItems: “center”, gap: 8 } },
+e(“span”, { style: { fontSize: 16 } }, “\u2705”),
+e(“div”, null,
+e(“div”, { style: { fontSize: 11, color: “#00ff88”, fontWeight: 700 } }, “Login saved”),
+e(“div”, { style: { fontSize: 10, color: “#00ff8860” } }, saved.srv + “ \u2022 #” + saved.lid)
+)
+) : null,
 // Live/Demo toggle
 e(“div”, { style: { display: “flex”, gap: 8, marginBottom: 16 } },
 e(“button”, { onClick: function() { setAccType(“live”); }, style: { flex: 1, padding: 12, border: “2px solid “ + (accType === “live” ? “#ff9800” : “#1a2538”), borderRadius: 8, background: accType === “live” ? “#ff980010” : “transparent”, color: accType === “live” ? “#ff9800” : “#3e4a5c”, cursor: “pointer”, fontFamily: “inherit” } },
@@ -428,6 +490,16 @@ e(“input”, { placeholder: “e.g. 51234567”, value: lid, onChange: functio
 e(“div”, { style: { marginBottom: 20 } },
 e(“div”, { style: { fontSize: 11, color: “#4a5568”, marginBottom: 5 } }, “PASSWORD”),
 e(“input”, { placeholder: “MT5 password”, type: “password”, value: pw, onChange: function(ev) { setPw(ev.target.value); } })
+),
+// Remember me
+e(“div”, { onClick: function() { setRemember(!remember); }, style: { display: “flex”, alignItems: “center”, gap: 10, marginBottom: 20, cursor: “pointer”, padding: “8px 0” } },
+e(“div”, { style: { width: 20, height: 20, borderRadius: 5, border: “2px solid “ + (remember ? “#00ff88” : “#1a2538”), background: remember ? “#00ff8820” : “transparent”, display: “flex”, alignItems: “center”, justifyContent: “center”, transition: “all .2s”, flexShrink: 0 } },
+remember ? e(“span”, { style: { color: “#00ff88”, fontSize: 12, fontWeight: 700 } }, “\u2713”) : null
+),
+e(“div”, null,
+e(“div”, { style: { fontSize: 12, color: remember ? “#fff” : “#6b7a8e”, fontWeight: 600 } }, “Remember me”),
+e(“div”, { style: { fontSize: 9, color: “#3e4a5c”, marginTop: 1 } }, “Save server, login & password locally”)
+)
 ),
 // Connect button
 e(“button”, { onClick: doConnect, disabled: !srv || !lid || !pw, style: { width: “100%”, padding: 16, border: “none”, borderRadius: 10, fontFamily: “inherit”, fontWeight: 700, fontSize: 14, cursor: “pointer”, background: srv && lid && pw ? (accType === “live” ? “linear-gradient(135deg,#e65100,#ff9800)” : “linear-gradient(135deg,#1565C0,#2196F3)”) : “#1a2538”, color: srv && lid && pw ? “#fff” : “#3e4a5c”, opacity: (!srv || !lid || !pw) ? 0.4 : 1 } },
@@ -581,7 +653,8 @@ e("div", { style: { padding: "8px 10px" } },
     e("div", { style: { display: "flex", gap: 8 } },
       e("button", { onClick: function() { setTrades(function(p) { return p.map(function(t) { return t.status === "LIVE" ? Object.assign({}, t, { status: "CLOSED" }) : t; }); }); addLog("All closed", "system"); }, style: { flex: 1, padding: 12, background: "#ffaa0012", color: "#ffaa00", fontSize: 11, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 } }, "CLOSE ALL"),
       e("button", { onClick: function() { setTrades([]); setSignals([]); setStats({ w: 0, l: 0, pips: 0, str: 0, best: 0, pft: 0 }); setBalance(accInfo ? accInfo.bal : 10000); setLogs([]); }, style: { flex: 1, padding: 12, background: "#ff475710", color: "#ff4757", fontSize: 11, border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 } }, "RESET")
-    )
+    ),
+    e("button", { onClick: function() { clearLogin(); setRemember(false); addLog("Saved credentials cleared", "system"); }, style: { width: "100%", padding: 12, marginTop: 8, background: "#1a253810", color: "#6b7a8e", fontSize: 11, border: "1px solid #1a2538", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 } }, "\uD83D\uDD12 Forget Saved Login")
   ) : null
 ),
 
